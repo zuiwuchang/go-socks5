@@ -1,0 +1,12 @@
+syntax = "proto3";
+ 
+package pb;
+ 
+service Socks5 {
+	rpc MakeChannel(stream Channel) returns (stream Channel) {}
+}
+ 
+
+message Channel {
+	bytes Data = 1;
+}
