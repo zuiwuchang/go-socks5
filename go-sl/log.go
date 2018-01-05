@@ -15,7 +15,7 @@ var Fault *log.Logger
 func init() {
 	l := klog.NewDebugLoggers()
 
-	Trace = l.Trace
+	//Trace = l.Trace
 	Debug = l.Debug
 	Info = l.Info
 	Warn = l.Warn

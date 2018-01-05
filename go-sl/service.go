@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
 	kio "github.com/zuiwuchang/king-go/io"
+	kstrings "github.com/zuiwuchang/king-go/strings"
 	"net"
 	"time"
 )
@@ -51,13 +54,18 @@ func (s *Service) onConnect(c net.Conn) {
 		ch <- errorCreateSocks5Timeout
 	})
 	//建立 socks5
+	var domain string
 	go func() {
-		ch <- s.createSocks5(c)
+		var e error
+		domain, e = s.createSocks5(c)
+		ch <- e
 	}()
 
 	//等待 建立 socks5
 	e := <-ch
 	if e == nil {
+		//建立 代理隧道
+		s.createChannel(c, domain)
 		return
 	}
 	c.Close()
@@ -65,7 +73,7 @@ func (s *Service) onConnect(c net.Conn) {
 		t.Stop()
 	}
 }
-func (s *Service) createSocks5(c net.Conn) (e error) {
+func (s *Service) createSocks5(c net.Conn) (domain string, e error) {
 	//協商 驗證方式
 	b := make([]byte, 7+255)
 	e = kio.ReadAll(c, b[:2])
@@ -143,6 +151,155 @@ func (s *Service) createSocks5(c net.Conn) (e error) {
 		}
 		return
 	}
-	Info.Println(b)
+	domain, e = s.getDomain(b[3], b[4:], c)
+	if e != nil {
+		return
+	}
+	//驗證 命令
+	if b[1] != 0x01 {
+		//不支持的 命令
+		b[3] = 0x1
+		b[1] = 0x07
+		e = kio.WriteAll(c, b[:10])
+		if Error != nil {
+			Error.Println(e)
+		}
+		return
+	}
+
 	return
+}
+func (s *Service) getDomain(artp byte, b []byte, c net.Conn) (str string, e error) {
+	var domain string
+	//獲取 地址 長度
+	switch artp {
+	case 0x1: //ipv4
+		e = kio.ReadAll(c, b[:6])
+		if e != nil {
+			if Error != nil {
+				Error.Println(e)
+			}
+			return
+		}
+		domain = fmt.Sprintf("%v:%v\n", net.IP(b[:4]).String(), binary.BigEndian.Uint16(b[4:]))
+	case 0x3: //domain
+		e = kio.ReadAll(c, b[:1])
+		if e != nil {
+			if Error != nil {
+				Error.Println(e)
+			}
+			return
+		}
+		if b[0] == 0 {
+			e = errorBadSocks5Protocol
+			if Error != nil {
+				Error.Println(e)
+			}
+			return
+		}
+		e = kio.ReadAll(c, b[1:1+b[0]+2])
+		if e != nil {
+			if Error != nil {
+				Error.Println(e)
+			}
+			return
+		}
+		domain = fmt.Sprintf(
+			"%v:%v",
+			kstrings.BytesToString(b[1:1+b[0]]),
+			binary.BigEndian.Uint16(b[1+b[0]:]),
+		)
+	case 0x4: //ipv6
+		e = kio.ReadAll(c, b[:18])
+		if e != nil {
+			if Error != nil {
+				Error.Println(e)
+			}
+			return
+		}
+		domain = fmt.Sprintf("%v:%v\n", net.IP(b[:16]).String(), binary.BigEndian.Uint16(b[16:]))
+	default:
+		e = errorBadSocks5Protocol
+		if Error != nil {
+			Error.Println(e)
+		}
+		return
+	}
+
+	str = domain
+	return
+}
+func (s *Service) createChannel(c net.Conn, domain string) {
+	defer c.Close()
+	//Info.Println(domain)
+	c0, e := net.Dial("tcp", domain)
+	if e != nil {
+		if Warn != nil {
+			Warn.Println(e)
+		}
+		return
+	}
+	defer c0.Close()
+
+	b := make([]byte, 1024*16)
+	//通知 建立 隧道 成功
+	b[0] = 0x5
+	b[3] = 0x1
+	e = kio.WriteAll(c, b[:10])
+	if e != nil {
+		if Error != nil {
+			Error.Println(e)
+			return
+		}
+	}
+	ch := make(chan bool, 1)
+
+	go func() {
+		var n int
+		for {
+			n, e = c.Read(b)
+			if e != nil {
+				if Warn != nil {
+					Warn.Println(e)
+					break
+				}
+			}
+			//fmt.Println("read ok")
+
+			e = kio.WriteAll(c0, b[:n])
+			if e != nil {
+				if Warn != nil {
+					Warn.Println(e)
+					break
+				}
+			}
+			//fmt.Println("write ok")
+		}
+		ch <- true
+	}()
+	go func() {
+		b := make([]byte, 1024*16)
+		var n int
+		for {
+			n, e = c0.Read(b)
+			if e != nil {
+				if Warn != nil {
+					Warn.Println(e)
+					break
+				}
+			}
+			//fmt.Println("0 read ok")
+
+			e = kio.WriteAll(c, b[:n])
+			if e != nil {
+				if Warn != nil {
+					Warn.Println(e)
+					break
+				}
+			}
+			//fmt.Println("0 write ok")
+		}
+		ch <- true
+	}()
+	<-ch
 }
