@@ -1,0 +1,7 @@
+{
+	"_comment":"//本地 socks5 監聽地址",
+	"LAddr":":1911",
+
+	"_comment":"遠程 服務器 地址",
+	"RemoteAddr":""
+}

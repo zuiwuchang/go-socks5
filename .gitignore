@@ -12,3 +12,6 @@
 
 # Project-local glide cache, RE: https://github.com/Masterminds/glide/issues/736
 .glide/
+
+go-sl/go-sl
+go-ss/go-ss
