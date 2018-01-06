@@ -71,28 +71,44 @@ func (s *Service) onConnect(c net.Conn) {
 	//建立 socks5
 	var domain string
 	var rs []byte
+	var stream pb.Socks5_MakeChannelClient
 	go func() {
 		var e error
 		rs, domain, e = s.createSocks5(c)
-		ch <- e
+		if e != nil {
+			ch <- e
+			return
+		}
+		//建立 代理隧道
+		stream, e = s.createChannel(c, domain, rs)
+		if e != nil {
+			ch <- e
+			return
+		}
+		ch <- nil
 	}()
 
 	//等待 建立 socks5
 	e := <-ch
 	if e == nil {
 		t.Stop()
-		//建立 代理隧道
-		s.createChannel(c, domain, rs)
+
+		if Info != nil {
+			Info.Println(c.RemoteAddr(), "->", domain)
+		}
+		s.connectChannel(c, stream)
+		c.Close()
 		return
 	}
 	c.Close()
-	if e != errorCreateSocks5Timeout {
+	if e == errorCreateSocks5Timeout {
 		if Warn != nil {
-			Warn.Println(e)
+			Warn.Println(c.RemoteAddr(), "->", domain, e)
 		}
-
+	} else {
 		t.Stop()
 	}
+
 }
 func (s *Service) createSocks5(c net.Conn) (rs []byte, domain string, e error) {
 	//協商 驗證方式
@@ -255,20 +271,23 @@ func (s *Service) getDomain(artp byte, b []byte, c net.Conn) (n byte, str string
 	str = domain
 	return
 }
-func (s *Service) createChannel(c net.Conn, domain string, rs []byte) {
+func (s *Service) createChannel(c net.Conn, domain string, rs []byte) (stream pb.Socks5_MakeChannelClient, e error) {
 	if Debug != nil {
-		Debug.Println(c.RemoteAddr(), "->", domain)
+		Debug.Println("request", c.RemoteAddr(), "->", domain)
 	}
-	defer c.Close()
+	defer func() {
+		if e != nil && stream != nil {
+			stream.CloseSend()
+		}
+	}()
 
-	stream, e := s.Client.MakeChannel(context.Background())
+	stream, e = s.Client.MakeChannel(context.Background())
 	if e != nil {
 		if Warn != nil {
 			Warn.Println(c.RemoteAddr(), "->", domain, e)
 		}
-		return
+		return nil, e
 	}
-	defer stream.CloseSend()
 
 	//通知 建立 連接
 	var b []byte
@@ -316,13 +335,13 @@ func (s *Service) createChannel(c net.Conn, domain string, rs []byte) {
 			return
 		}
 	}
-
-	//連接 隧道
+	return
+}
+func (s *Service) connectChannel(c net.Conn, stream pb.Socks5_MakeChannelClient) {
 	ch := make(chan bool, 1)
 	go s.forwardToRemote(ch, c, stream)
 	go s.forwardFromRemote(ch, c, stream)
 	<-ch
-	return
 }
 func (s *Service) forwardToRemote(ch chan bool, c net.Conn, stream pb.Socks5_MakeChannelClient) {
 	b := make([]byte, s.Configure.RecvBuffer)

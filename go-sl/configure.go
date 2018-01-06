@@ -49,9 +49,12 @@ func (c *Configure) Format() {
 
 	c.Logs = strings.TrimSpace(c.Logs)
 
-	if c.Timeout != 0 {
+	if c.Timeout == 0 {
+		c.Timeout = time.Second * 15
+	} else {
 		c.Timeout *= time.Second
 	}
+
 	if c.RecvBuffer < 1024 {
 		c.RecvBuffer = 1024 * 32
 	}
