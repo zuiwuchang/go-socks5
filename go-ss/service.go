@@ -18,9 +18,7 @@ func (s *Service) runService(cnf *Configure) {
 		}
 		exit()
 	}
-	if Info != nil {
-		Info.Println("work at", cnf.LAddr)
-	}
+	g_logs.Info.Println("work at", cnf.LAddr)
 
 	//創建 rpc 服務器
 	gs := grpc.NewServer()

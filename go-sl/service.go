@@ -318,7 +318,13 @@ func (s *Service) createChannel(c net.Conn, domain string, rs []byte) (stream pb
 		return
 	}
 	e = proto.Unmarshal(m.Data, &connectRs)
-	if e != nil || connectRs.Code != 0 {
+	if e != nil {
+		if Warn != nil {
+			Warn.Println(c.RemoteAddr(), "->", domain, e)
+		}
+		return
+	} else if connectRs.Code != 0 {
+		e = errors.New(connectRs.Emsg)
 		if Warn != nil {
 			Warn.Println(c.RemoteAddr(), "->", domain, e)
 		}

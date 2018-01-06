@@ -32,6 +32,16 @@ func (s *Socks5) MakeChannel(stream pb.Socks5_MakeChannelServer) (e error) {
 		if Warn != nil {
 			Warn.Println("pwd not match")
 		}
+
+		//通知 建立 連接 失敗
+		m.Data, e = proto.Marshal(&pb.ConnectRs{
+			Code: 1,
+			Emsg: "pwd not match",
+		})
+		e = stream.SendMsg(&m)
+		if e != nil && Error != nil {
+			Error.Println(e)
+		}
 		return
 	}
 
@@ -78,7 +88,7 @@ func (s *Socks5) MakeChannel(stream pb.Socks5_MakeChannelServer) (e error) {
 				}
 				break
 			}
-			//fmt.Println("read ok")
+
 			relp.Data = b[:n]
 			e = stream.SendMsg(&relp)
 			if e != nil {
@@ -87,7 +97,6 @@ func (s *Socks5) MakeChannel(stream pb.Socks5_MakeChannelServer) (e error) {
 				}
 				break
 			}
-			//fmt.Println("write ok")
 		}
 		ch <- true
 	}()
@@ -102,7 +111,6 @@ func (s *Socks5) MakeChannel(stream pb.Socks5_MakeChannelServer) (e error) {
 				}
 				break
 			}
-			//fmt.Println("0 read ok")
 
 			e = kio.WriteAll(c, req.Data)
 			if e != nil {
@@ -111,7 +119,6 @@ func (s *Socks5) MakeChannel(stream pb.Socks5_MakeChannelServer) (e error) {
 				}
 				break
 			}
-			//fmt.Println("0 write ok")
 		}
 		ch <- true
 	}()

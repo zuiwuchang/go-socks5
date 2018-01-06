@@ -16,6 +16,7 @@ var g_logs *klog.Loggers = klog.NewDebugLoggers()
 
 func init() {
 	flags := log.Ltime
+	//flags := log.Lshortfile | log.Lshortfile
 	g_logs.Trace.SetFlags(flags)
 	g_logs.Debug.SetFlags(flags)
 	g_logs.Info.SetFlags(flags)
