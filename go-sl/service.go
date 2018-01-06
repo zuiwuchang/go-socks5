@@ -42,9 +42,7 @@ func (s *Service) runService(cnf *Configure) {
 		}
 		exit()
 	}
-	if Info != nil {
-		Info.Println("socks5 work at", cnf.LAddr)
-	}
+	g_logs.Info.Println("socks5 work at", cnf.LAddr)
 
 	var c net.Conn
 	for {

@@ -14,6 +14,15 @@ var Warn *log.Logger
 var Fault *log.Logger
 var g_logs *klog.Loggers = klog.NewDebugLoggers()
 
+func init() {
+	flags := log.Ltime
+	g_logs.Trace.SetFlags(flags)
+	g_logs.Debug.SetFlags(flags)
+	g_logs.Info.SetFlags(flags)
+	g_logs.Error.SetFlags(flags)
+	g_logs.Warn.SetFlags(flags)
+	g_logs.Fault.SetFlags(flags)
+}
 func initLogs(cnf *Configure) {
 	keys := make(map[string]bool)
 	strs := strings.Split(strings.ToLower(cnf.Logs), ",")
