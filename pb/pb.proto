@@ -14,3 +14,7 @@ message Connect{
 	string Addr = 1;
 	string Pwd = 2;
 }
+message ConnectRs{
+	int32 Code = 1;
+	string Emsg = 2;
+}

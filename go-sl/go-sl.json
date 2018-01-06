@@ -1,10 +1,16 @@
 {
 	"_comment":"本地 socks5 監聽地址",
-	"LAddr":":1911",
+	"LAddr":"localhost:1911",
 
 	"_comment":"遠程 服務器 地址",
 	"RemoteAddr":"127.0.0.1:2921",
 
 	"_comment":"遠程 服務器 驗證密碼",
-	"RemotePwd":"kate beckinsale is so sexy"
+	"RemotePwd":"kate beckinsale is so sexy",
+
+	"_comment":"要顯示的日誌 信息 all == trace,debug,info,warn,error,fault",
+	"Logs":"",
+
+	"_comment":"建立 隧道 超時 時間 單位 秒",
+	"Timeout":15
 }

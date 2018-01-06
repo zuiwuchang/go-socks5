@@ -64,8 +64,8 @@ func (s *Service) onConnect(c net.Conn) {
 		defer Trace.Println("close", c.RemoteAddr())
 	}
 	ch := make(chan error, 1)
-	//10秒內建立 socks5
-	t := time.AfterFunc(time.Second*10, func() {
+	//建立 socks5 超時
+	t := time.AfterFunc(s.Configure.Timeout, func() {
 		ch <- errorCreateSocks5Timeout
 	})
 	//建立 socks5
@@ -80,12 +80,17 @@ func (s *Service) onConnect(c net.Conn) {
 	//等待 建立 socks5
 	e := <-ch
 	if e == nil {
+		t.Stop()
 		//建立 代理隧道
 		s.createChannel(c, domain, rs)
 		return
 	}
 	c.Close()
 	if e != errorCreateSocks5Timeout {
+		if Warn != nil {
+			Warn.Println(e)
+		}
+
 		t.Stop()
 	}
 }
@@ -248,18 +253,18 @@ func (s *Service) getDomain(artp byte, b []byte, c net.Conn) (n byte, str string
 	}
 
 	str = domain
-	if Info != nil {
-		Info.Println(domain)
-	}
 	return
 }
 func (s *Service) createChannel(c net.Conn, domain string, rs []byte) {
+	if Debug != nil {
+		Debug.Println(c.RemoteAddr(), "->", domain)
+	}
 	defer c.Close()
 
 	stream, e := s.Client.MakeChannel(context.Background())
 	if e != nil {
 		if Warn != nil {
-			Warn.Println(e)
+			Warn.Println(c.RemoteAddr(), "->", domain, e)
 		}
 		return
 	}
@@ -273,7 +278,7 @@ func (s *Service) createChannel(c net.Conn, domain string, rs []byte) {
 	})
 	if e != nil {
 		if Error != nil {
-			Error.Println(e)
+			Error.Println(c.RemoteAddr(), "->", domain, e)
 		}
 		return
 	}
@@ -282,15 +287,27 @@ func (s *Service) createChannel(c net.Conn, domain string, rs []byte) {
 	})
 	if e != nil {
 		if Warn != nil {
-			Warn.Println(e)
+			Warn.Println(c.RemoteAddr(), "->", domain, e)
 		}
 		return
 	}
-
-	b = make([]byte, 1024*16)
+	var connectRs pb.ConnectRs
+	var m pb.Channel
+	e = stream.RecvMsg(&m)
+	if e != nil {
+		if Warn != nil {
+			Warn.Println(c.RemoteAddr(), "->", domain, e)
+		}
+		return
+	}
+	e = proto.Unmarshal(m.Data, &connectRs)
+	if e != nil || connectRs.Code != 0 {
+		if Warn != nil {
+			Warn.Println(c.RemoteAddr(), "->", domain, e)
+		}
+		return
+	}
 	//通知 建立 隧道 成功
-	b[0] = 0x5
-	b[3] = 0x1
 	rs[1] = 0
 	e = kio.WriteAll(c, rs)
 	if e != nil {
@@ -299,58 +316,59 @@ func (s *Service) createChannel(c net.Conn, domain string, rs []byte) {
 			return
 		}
 	}
+
+	//連接 隧道
 	ch := make(chan bool, 1)
-
-	go func() {
-		var n int
-		var e error
-		var req pb.Channel
-		for {
-			n, e = c.Read(b)
-			if e != nil {
-				if Warn != nil {
-					Warn.Println(e)
-				}
-				break
-			}
-			//fmt.Println("read ok")
-			req.Data = b[:n]
-			e = stream.SendMsg(&req)
-			if e != nil {
-				if Warn != nil {
-					Warn.Println(e)
-				}
-				break
-			}
-			//fmt.Println("write ok")
-		}
-		ch <- true
-	}()
-
-	go func() {
-		var repl pb.Channel
-		var e error
-		for {
-			e = stream.RecvMsg(&repl)
-			if e != nil {
-				if Warn != nil {
-					Warn.Println(e)
-				}
-				break
-			}
-			//fmt.Println("0 read ok")
-
-			e = kio.WriteAll(c, repl.Data)
-			if e != nil {
-				if Warn != nil {
-					Warn.Println(e)
-				}
-				break
-			}
-			//fmt.Println("0 write ok")
-		}
-		ch <- true
-	}()
+	go s.forwardToRemote(ch, c, stream)
+	go s.forwardFromRemote(ch, c, stream)
 	<-ch
 	return
+}
+func (s *Service) forwardToRemote(ch chan bool, c net.Conn, stream pb.Socks5_MakeChannelClient) {
+	b := make([]byte, s.Configure.RecvBuffer)
+	var n int
+	var e error
+	var req pb.Channel
+	for {
+		n, e = c.Read(b)
+		if e != nil {
+			if Warn != nil {
+				Warn.Println(e)
+			}
+			break
+		}
+
+		req.Data = b[:n]
+		e = stream.SendMsg(&req)
+		if e != nil {
+			if Warn != nil {
+				Warn.Println(e)
+			}
+			break
+		}
+
+	}
+	ch <- true
+}
+func (s *Service) forwardFromRemote(ch chan bool, c net.Conn, stream pb.Socks5_MakeChannelClient) {
+	var repl pb.Channel
+	var e error
+	for {
+		e = stream.RecvMsg(&repl)
+		if e != nil {
+			if Warn != nil {
+				Warn.Println(e)
+			}
+			break
+		}
+
+		e = kio.WriteAll(c, repl.Data)
+		if e != nil {
+			if Warn != nil {
+				Warn.Println(e)
+			}
+			break
+		}
+	}
+	ch <- true
 }

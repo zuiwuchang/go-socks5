@@ -41,9 +41,28 @@ func (s *Socks5) MakeChannel(stream pb.Socks5_MakeChannelServer) (e error) {
 		if Error != nil {
 			Error.Println(e)
 		}
+
+		//通知 建立 連接 失敗
+		m.Data, e = proto.Marshal(&pb.ConnectRs{
+			Code: 1,
+			Emsg: e.Error(),
+		})
+		e = stream.SendMsg(&m)
+		if e != nil && Error != nil {
+			Error.Println(e)
+		}
 		return
 	}
 	defer c.Close()
+	//通知 建立 連接 成功
+	m.Data, e = proto.Marshal(&pb.ConnectRs{})
+	e = stream.SendMsg(&m)
+	if e != nil {
+		if Error != nil {
+			Error.Println(e)
+		}
+		return
+	}
 
 	ch := make(chan bool, 1)
 	go func() {
