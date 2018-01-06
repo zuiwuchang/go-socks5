@@ -4,8 +4,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/golang/protobuf/proto"
 	kio "github.com/zuiwuchang/king-go/io"
 	kstrings "github.com/zuiwuchang/king-go/strings"
+	"go-socks5/pb"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 	"net"
 	"time"
 )
@@ -15,10 +19,21 @@ var errorBadSocks5Protocol = errors.New("unknow protocol")
 
 type Service struct {
 	Configure *Configure
+	Client    pb.Socks5Client
 }
 
 func (s *Service) runService(cnf *Configure) {
 	s.Configure = cnf
+	//連接 服務器
+	conn, e := grpc.Dial(cnf.RemoteAddr, grpc.WithInsecure())
+	if e != nil {
+		if Fault != nil {
+			Fault.Fatalln(e)
+		}
+		exit()
+	}
+	defer conn.Close()
+	s.Client = pb.NewSocks5Client(conn)
 
 	l, e := net.Listen("tcp", cnf.LAddr)
 	if e != nil {
@@ -55,9 +70,10 @@ func (s *Service) onConnect(c net.Conn) {
 	})
 	//建立 socks5
 	var domain string
+	var rs []byte
 	go func() {
 		var e error
-		domain, e = s.createSocks5(c)
+		rs, domain, e = s.createSocks5(c)
 		ch <- e
 	}()
 
@@ -65,7 +81,7 @@ func (s *Service) onConnect(c net.Conn) {
 	e := <-ch
 	if e == nil {
 		//建立 代理隧道
-		s.createChannel(c, domain)
+		s.createChannel(c, domain, rs)
 		return
 	}
 	c.Close()
@@ -73,7 +89,7 @@ func (s *Service) onConnect(c net.Conn) {
 		t.Stop()
 	}
 }
-func (s *Service) createSocks5(c net.Conn) (domain string, e error) {
+func (s *Service) createSocks5(c net.Conn) (rs []byte, domain string, e error) {
 	//協商 驗證方式
 	b := make([]byte, 7+255)
 	e = kio.ReadAll(c, b[:2])
@@ -151,25 +167,27 @@ func (s *Service) createSocks5(c net.Conn) (domain string, e error) {
 		}
 		return
 	}
-	domain, e = s.getDomain(b[3], b[4:], c)
+	var n byte
+	n, domain, e = s.getDomain(b[3], b[4:], c)
 	if e != nil {
 		return
 	}
+	b = b[:n+4]
 	//驗證 命令
 	if b[1] != 0x01 {
 		//不支持的 命令
-		b[3] = 0x1
+		//b[3] = 0x1
 		b[1] = 0x07
-		e = kio.WriteAll(c, b[:10])
+		e = kio.WriteAll(c, b)
 		if Error != nil {
 			Error.Println(e)
 		}
 		return
 	}
-
+	rs = b
 	return
 }
-func (s *Service) getDomain(artp byte, b []byte, c net.Conn) (str string, e error) {
+func (s *Service) getDomain(artp byte, b []byte, c net.Conn) (n byte, str string, e error) {
 	var domain string
 	//獲取 地址 長度
 	switch artp {
@@ -181,6 +199,7 @@ func (s *Service) getDomain(artp byte, b []byte, c net.Conn) (str string, e erro
 			}
 			return
 		}
+		n = 6
 		domain = fmt.Sprintf("%v:%v\n", net.IP(b[:4]).String(), binary.BigEndian.Uint16(b[4:]))
 	case 0x3: //domain
 		e = kio.ReadAll(c, b[:1])
@@ -197,6 +216,7 @@ func (s *Service) getDomain(artp byte, b []byte, c net.Conn) (str string, e erro
 			}
 			return
 		}
+		n = 1 + b[0] + 2
 		e = kio.ReadAll(c, b[1:1+b[0]+2])
 		if e != nil {
 			if Error != nil {
@@ -210,6 +230,7 @@ func (s *Service) getDomain(artp byte, b []byte, c net.Conn) (str string, e erro
 			binary.BigEndian.Uint16(b[1+b[0]:]),
 		)
 	case 0x4: //ipv6
+		n = 18
 		e = kio.ReadAll(c, b[:18])
 		if e != nil {
 			if Error != nil {
@@ -227,25 +248,51 @@ func (s *Service) getDomain(artp byte, b []byte, c net.Conn) (str string, e erro
 	}
 
 	str = domain
+	if Info != nil {
+		Info.Println(domain)
+	}
 	return
 }
-func (s *Service) createChannel(c net.Conn, domain string) {
+func (s *Service) createChannel(c net.Conn, domain string, rs []byte) {
 	defer c.Close()
-	//Info.Println(domain)
-	c0, e := net.Dial("tcp", domain)
+
+	stream, e := s.Client.MakeChannel(context.Background())
 	if e != nil {
 		if Warn != nil {
 			Warn.Println(e)
 		}
 		return
 	}
-	defer c0.Close()
+	defer stream.CloseSend()
 
-	b := make([]byte, 1024*16)
+	//通知 建立 連接
+	var b []byte
+	b, e = proto.Marshal(&pb.Connect{
+		Addr: domain,
+		Pwd:  s.Configure.RemotePwd,
+	})
+	if e != nil {
+		if Error != nil {
+			Error.Println(e)
+		}
+		return
+	}
+	e = stream.SendMsg(&pb.Channel{
+		Data: b,
+	})
+	if e != nil {
+		if Warn != nil {
+			Warn.Println(e)
+		}
+		return
+	}
+
+	b = make([]byte, 1024*16)
 	//通知 建立 隧道 成功
 	b[0] = 0x5
 	b[3] = 0x1
-	e = kio.WriteAll(c, b[:10])
+	rs[1] = 0
+	e = kio.WriteAll(c, rs)
 	if e != nil {
 		if Error != nil {
 			Error.Println(e)
@@ -256,50 +303,54 @@ func (s *Service) createChannel(c net.Conn, domain string) {
 
 	go func() {
 		var n int
+		var e error
+		var req pb.Channel
 		for {
 			n, e = c.Read(b)
 			if e != nil {
 				if Warn != nil {
 					Warn.Println(e)
-					break
 				}
+				break
 			}
 			//fmt.Println("read ok")
-
-			e = kio.WriteAll(c0, b[:n])
+			req.Data = b[:n]
+			e = stream.SendMsg(&req)
 			if e != nil {
 				if Warn != nil {
 					Warn.Println(e)
-					break
 				}
+				break
 			}
 			//fmt.Println("write ok")
 		}
 		ch <- true
 	}()
+
 	go func() {
-		b := make([]byte, 1024*16)
-		var n int
+		var repl pb.Channel
+		var e error
 		for {
-			n, e = c0.Read(b)
+			e = stream.RecvMsg(&repl)
 			if e != nil {
 				if Warn != nil {
 					Warn.Println(e)
-					break
 				}
+				break
 			}
 			//fmt.Println("0 read ok")
 
-			e = kio.WriteAll(c, b[:n])
+			e = kio.WriteAll(c, repl.Data)
 			if e != nil {
 				if Warn != nil {
 					Warn.Println(e)
-					break
 				}
+				break
 			}
 			//fmt.Println("0 write ok")
 		}
 		ch <- true
 	}()
 	<-ch
+	return
 }

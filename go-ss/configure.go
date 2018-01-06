@@ -7,14 +7,10 @@ import (
 
 //配置 檔案
 type Configure struct {
-	//本地 socks5 監聽地址
+	//服務監聽 地址
 	LAddr string `json:"LAddr"`
-
-	//遠程 服務器 地址
-	RemoteAddr string
-
-	//遠程 服務器 驗證密碼
-	RemotePwd string
+	//驗證密碼 如果為空 則不進行驗證
+	Pwd string
 }
 
 func LoadConfigure(filename string) (cnf *Configure, e error) {

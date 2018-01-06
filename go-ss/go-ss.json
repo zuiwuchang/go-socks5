@@ -1,0 +1,7 @@
+{
+	"_comment":"服務監聽 地址",
+	"LAddr":":2921",
+
+	"_comment":"驗證密碼 如果為空 則不進行驗證",
+	"Pwd":"kate beckinsale is so sexy"
+}
