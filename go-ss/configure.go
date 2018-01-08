@@ -2,9 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"strings"
 )
 
@@ -17,6 +15,20 @@ type Configure struct {
 
 	//要顯示的日誌 信息 all == trace,debug,info,warn,error,fault
 	Logs string
+
+	//recv 緩衝區 大小
+	RecvBuffer int
+
+	//是否使用 未加密的 h2c 模式
+	H2C bool `json:"H2C"`
+
+	//僅在使用 h2 時 指定 https 證書 路徑
+	Crt string
+	//僅在使用 h2 時 指定 https 證書 key 路徑
+	Key string
+
+	//客戶端 證書
+	ClientCrts []string
 }
 
 func (c *Configure) String() string {
@@ -24,6 +36,11 @@ func (c *Configure) String() string {
 	w.WriteString(fmt.Sprintf("	LAddr = %v,\n", c.LAddr))
 	w.WriteString(fmt.Sprintf("	Pwd = %v,\n", c.Pwd))
 	w.WriteString(fmt.Sprintf("	Logs = %v,\n", c.Logs))
+	w.WriteString(fmt.Sprintf("	RecvBuffer = %v,\n", c.RecvBuffer))
+	w.WriteString(fmt.Sprintf("	H2C = %v,\n", c.H2C))
+	w.WriteString(fmt.Sprintf("	Crt = %v,\n", c.Crt))
+	w.WriteString(fmt.Sprintf("	Key = %v,\n", c.Key))
+	w.WriteString(fmt.Sprintf("	ClientCrts = %v,\n", c.ClientCrts))
 	w.WriteString("}")
 	return w.String()
 }
@@ -35,16 +52,15 @@ func (c *Configure) Format() {
 	}
 
 	c.Logs = strings.TrimSpace(c.Logs)
-}
-func LoadConfigure(filename string) (cnf *Configure, e error) {
-	var b []byte
-	if b, e = ioutil.ReadFile(filename); e != nil {
-		return
+
+	if c.RecvBuffer < 1024 {
+		c.RecvBuffer = 1024 * 32
 	}
-	var configure Configure
-	if e = json.Unmarshal(b, &configure); e != nil {
-		return
+
+	if c.Crt == "" {
+		c.Crt = DefaultCrt
 	}
-	cnf = &configure
-	return
+	if c.Key == "" {
+		c.Key = DefaultKey
+	}
 }

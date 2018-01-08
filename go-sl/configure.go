@@ -2,9 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"strings"
 	"time"
 )
@@ -27,6 +25,15 @@ type Configure struct {
 	Timeout time.Duration
 	//recv 緩衝區 大小
 	RecvBuffer int
+
+	//是否使用 未加密的 h2c 模式
+	H2C bool `json:"H2C"`
+	//僅在使用 h2 時 指定 https 證書 路徑
+	Crt string
+	//僅在使用 h2 時 指定 https 證書 key 路徑
+	Key string
+	//不驗證 tls 證書
+	SkipVerify bool
 }
 
 func (c *Configure) String() string {
@@ -37,6 +44,10 @@ func (c *Configure) String() string {
 	w.WriteString(fmt.Sprintf("	Logs = %v,\n", c.Logs))
 	w.WriteString(fmt.Sprintf("	Timeout = %v,\n", c.Timeout))
 	w.WriteString(fmt.Sprintf("	RecvBuffer = %v,\n", c.RecvBuffer))
+	w.WriteString(fmt.Sprintf("	H2C = %v,\n", c.H2C))
+	w.WriteString(fmt.Sprintf("	Crt = %v,\n", c.Crt))
+	w.WriteString(fmt.Sprintf("	Key = %v,\n", c.Key))
+	w.WriteString(fmt.Sprintf("	SkipVerify = %v,\n", c.SkipVerify))
 	w.WriteString("}")
 	return w.String()
 }
@@ -49,26 +60,11 @@ func (c *Configure) Format() {
 
 	c.Logs = strings.TrimSpace(c.Logs)
 
-	if c.Timeout == 0 {
+	if c.Timeout < 1 {
 		c.Timeout = time.Second * 15
-	} else {
-		c.Timeout *= time.Second
 	}
 
 	if c.RecvBuffer < 1024 {
 		c.RecvBuffer = 1024 * 32
 	}
-}
-
-func LoadConfigure(filename string) (cnf *Configure, e error) {
-	var b []byte
-	if b, e = ioutil.ReadFile(filename); e != nil {
-		return
-	}
-	var configure Configure
-	if e = json.Unmarshal(b, &configure); e != nil {
-		return
-	}
-	cnf = &configure
-	return
 }

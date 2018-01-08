@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"go-socks5/pb"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"net"
 	"time"
 )
@@ -22,13 +24,47 @@ type Service struct {
 	Client    pb.Socks5Client
 }
 
+func (s *Service) createRpcConn(cnf *Configure) (c *grpc.ClientConn, e error) {
+	if cnf.H2C {
+		//連接 服務器
+		c, e = grpc.Dial(
+			cnf.RemoteAddr,
+			grpc.WithInsecure(),
+		)
+		if e != nil {
+			return
+		}
+	} else {
+		tlsConfig := &tls.Config{}
+		if cnf.SkipVerify {
+			tlsConfig.InsecureSkipVerify = true
+		}
+		if cnf.Crt != "" {
+			//加載 x509 證書
+			var cert tls.Certificate
+			cert, e = tls.LoadX509KeyPair(cnf.Crt, cnf.Key)
+			if e != nil {
+				if Fault != nil {
+					Fault.Println(e)
+				}
+				exit()
+			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
+		creds := credentials.NewTLS(tlsConfig)
+		c, e = grpc.Dial(
+			cnf.RemoteAddr,
+			grpc.WithTransportCredentials(creds),
+		)
+	}
+	return
+}
 func (s *Service) runService(cnf *Configure) {
 	s.Configure = cnf
-	//連接 服務器
-	conn, e := grpc.Dial(cnf.RemoteAddr, grpc.WithInsecure())
+	conn, e := s.createRpcConn(cnf)
 	if e != nil {
 		if Fault != nil {
-			Fault.Fatalln(e)
+			Fault.Println(e)
 		}
 		exit()
 	}

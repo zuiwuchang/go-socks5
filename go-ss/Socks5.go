@@ -78,7 +78,7 @@ func (s *Socks5) MakeChannel(stream pb.Socks5_MakeChannelServer) (e error) {
 	go func() {
 		var e error
 		var n int
-		b := make([]byte, 1024*16)
+		b := make([]byte, s.Configure.RecvBuffer)
 		var relp pb.Channel
 		for {
 			n, e = c.Read(b)

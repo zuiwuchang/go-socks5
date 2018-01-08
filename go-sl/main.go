@@ -11,8 +11,8 @@ func exit() {
 	os.Exit(1)
 }
 func main() {
-	var h bool
-	var f, l, p, r, logs string
+	var h, h2c, skip bool
+	var f, l, p, r, logs, crt, key string
 	var timeout int64
 	var buffer int
 
@@ -29,6 +29,11 @@ func main() {
 	flag.Int64Var(&timeout, "timeout", 0, "create socks5 channel timeout (default 15s)")
 	flag.IntVar(&buffer, "buffer", 0, "recv buffer (default 32k)")
 
+	flag.BoolVar(&h2c, "h2c", false, "use http2 h2c not tls")
+	flag.StringVar(&crt, "crt", "", "certificate file path of h2")
+	flag.StringVar(&key, "key", "", "certificate key file path of h2")
+	flag.BoolVar(&skip, "skip", false, "skip verify credentials")
+
 	flag.Parse()
 	if h {
 		flag.PrintDefaults()
@@ -36,19 +41,9 @@ func main() {
 	}
 
 	//load cnf
-	var cnf *Configure
-	if f == "" {
-		cnf = &Configure{}
-	} else {
-		var e error
-		cnf, e = LoadConfigure(f)
-		if e != nil {
-			g_logs.Fault.Fatalln(e)
-			return
-		}
-	}
+	cnf := &Configure{}
+
 	//format cnf
-	cnf.Format()
 	l = strings.TrimSpace(l)
 	if l != "" {
 		cnf.LAddr = l
@@ -67,9 +62,19 @@ func main() {
 	if timeout > 0 {
 		cnf.Timeout = time.Duration(timeout) * time.Second
 	}
-	if buffer > 1024 {
-		cnf.RecvBuffer = buffer
+	cnf.RecvBuffer = buffer
+	cnf.H2C = h2c
+	crt = strings.TrimSpace(crt)
+	if crt != "" {
+		cnf.Crt = crt
 	}
+	key = strings.TrimSpace(key)
+	if key != "" {
+		cnf.Key = key
+	}
+	cnf.SkipVerify = skip
+
+	cnf.Format()
 	initLogs(cnf)
 	if Trace != nil {
 		Trace.Printf("\n%v\n", cnf)
