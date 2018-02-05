@@ -16,11 +16,12 @@ func exit() {
 }
 func main() {
 	var h, h2c bool
-	var p, logs, crt, key, crts string
+	var l, p, logs, crt, key, crts string
 	var buffer int
 
 	flag.BoolVar(&h, "h", false, "show help")
 
+	flag.StringVar(&l, "l", ":2921", "listen addr")
 	flag.StringVar(&p, "p", "", "auth password")
 	flag.StringVar(&logs, "logs", "",
 		`set show logs
@@ -43,6 +44,7 @@ func main() {
 	cnf := &Configure{}
 
 	//format cnf
+	cnf.LAddr = l
 	if p != "" {
 		cnf.Pwd = p
 	}
